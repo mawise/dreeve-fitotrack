@@ -57,6 +57,7 @@ class RelayHandler(BaseHTTPRequestHandler):
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
                 "Content-Length": str(len(body)),
                 "Accept": "application/json",
+                "User-Agent": "FitoTrack-Dreeve-Relay/1.0",
             },
             method="POST",
         )
@@ -64,17 +65,20 @@ class RelayHandler(BaseHTTPRequestHandler):
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 resp_body = resp.read()
+                print(f"[SUCCESS] Uploaded {filename} -> HTTP {resp.status}", flush=True)
                 self.send_response(resp.status)
                 self.send_header("Content-Type", resp.headers.get("Content-Type", "application/json"))
                 self.end_headers()
                 self.wfile.write(resp_body)
         except urllib.error.HTTPError as e:
             err_body = e.read()
+            print(f"[DREEVE HTTP ERROR {e.code}] {err_body.decode('utf-8', errors='replace')}", flush=True)
             self.send_response(e.code)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(err_body)
         except Exception as e:
+            print(f"[UPSTREAM EXCEPTION] URL={DREEVE_UPLOAD_URL} Error={repr(e)}", flush=True)
             self.send_response(502)
             self.end_headers()
             self.wfile.write(f'{{"error": "Upstream error: {str(e)}"}}'.encode("utf-8"))
