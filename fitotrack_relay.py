@@ -34,8 +34,12 @@ class RelayHandler(BaseHTTPRequestHandler):
             return
         gpx_bytes = self.rfile.read(content_length)
 
-        # 3. Sanitize filename from X-FitoTrack-Filename (ensure .gpx extension)
-        raw_filename = self.headers.get("X-FitoTrack-Filename", "workout.gpx")
+        # 3. Build a unique filename from Fitotrack-Workout-Type and Fitotrack-Timestamp
+        workout_type = self.headers.get("Fitotrack-Workout-Type", "workout")
+        timestamp = self.headers.get("Fitotrack-Timestamp", uuid.uuid4().hex[:8])
+        raw_filename = self.headers.get(
+            "X-FitoTrack-Filename", f"{workout_type}_{timestamp}.gpx"
+        )
         filename = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_filename)
         if not filename.lower().endswith((".gpx", ".tcx", ".fit")):
             filename += ".gpx"
@@ -48,7 +52,7 @@ class RelayHandler(BaseHTTPRequestHandler):
             f"Content-Type: application/gpx+xml\r\n\r\n"
         ).encode("utf-8") + gpx_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
 
-        # 5. Forward to Dreeve API
+        # 5. Forward to Dreeve API (include User-Agent to avoid bot blocks)
         req = urllib.request.Request(
             DREEVE_UPLOAD_URL,
             data=body,
@@ -57,6 +61,7 @@ class RelayHandler(BaseHTTPRequestHandler):
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
                 "Content-Length": str(len(body)),
                 "Accept": "application/json",
+                "User-Agent": "FitoTrack-Dreeve-Relay/1.0",
             },
             method="POST",
         )
@@ -64,17 +69,20 @@ class RelayHandler(BaseHTTPRequestHandler):
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 resp_body = resp.read()
+                print(f"[SUCCESS] Uploaded {filename} -> HTTP {resp.status}", flush=True)
                 self.send_response(resp.status)
                 self.send_header("Content-Type", resp.headers.get("Content-Type", "application/json"))
                 self.end_headers()
                 self.wfile.write(resp_body)
         except urllib.error.HTTPError as e:
             err_body = e.read()
+            print(f"[DREEVE HTTP ERROR {e.code}] {err_body.decode('utf-8', errors='replace')}", flush=True)
             self.send_response(e.code)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(err_body)
         except Exception as e:
+            print(f"[UPSTREAM EXCEPTION] URL={DREEVE_UPLOAD_URL} Error={repr(e)}", flush=True)
             self.send_response(502)
             self.end_headers()
             self.wfile.write(f'{{"error": "Upstream error: {str(e)}"}}'.encode("utf-8"))
