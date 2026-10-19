@@ -6,7 +6,7 @@ services:
     volumes:
       - ./fitotrack_relay.py:/app/fitotrack_relay.py:ro
     environment:
-      - DREEVE_UPLOAD_URL=http://app:8080/api/v1/activity/upload
+      - DREEVE_UPLOAD_URL=${DREEVE_UPLOAD_URL:-http://app:8080/api/v1/activity/upload}
     command: ["python3", "/app/fitotrack_relay.py"]
     ports:
       - "127.0.0.1:8081:8081"
